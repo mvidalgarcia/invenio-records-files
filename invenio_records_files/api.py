@@ -55,9 +55,11 @@ class FileObject(object):
         return getattr(self.obj, key)
 
     def __getitem__(self, key):
-        """Proxy to ``obj`` and ``data``."""
+        """Proxy to ``obj``, ``file`` and ``data``."""
         if hasattr(self.obj, key):
             return getattr(self.obj, key)
+        if hasattr(self.file, key):
+            return getattr(self.file, key)
         return self.data[key]
 
     def __setitem__(self, key, value):
@@ -263,19 +265,21 @@ class FilesMixin(object):
 
         :returns: Files iterator.
         """
-        if self.model is None:
-            raise MissingModelError()
+        if self._files is None:
+            if self.model is None:
+                raise MissingModelError()
 
-        records_buckets = RecordsBuckets.query.filter_by(
-            record_id=self.id
-        ).first()
+            records_buckets = RecordsBuckets.query.filter_by(
+                bucket_id=self.bucket_id).first()
 
-        if not records_buckets:
-            return None
-        else:
-            bucket = records_buckets.bucket
+            if not records_buckets:
+                return None
+            else:
+                bucket = records_buckets.bucket
 
-        return self.files_iter_cls(self, bucket=bucket, file_cls=self.file_cls)
+            self._files = self.files_iter_cls(self, bucket=bucket,
+                                              file_cls=self.file_cls)
+        return self._files
 
     @files.setter
     def files(self, data):
@@ -305,6 +309,7 @@ class Record(_Record, FilesMixin):
     def __init__(self, *args, **kwargs):
         """Initialize the record."""
         self._bucket = None
+        self._files = None
         super(Record, self).__init__(*args, **kwargs)
 
     @classmethod
@@ -324,6 +329,12 @@ class Record(_Record, FilesMixin):
         if with_bucket and bucket:
             RecordsBuckets.create(record=record.model, bucket=bucket)
             record._bucket = bucket
+        return record
+
+    @classmethod
+    def get_record(cls, id_, with_deleted=False):
+        record = super(Record, cls).get_record(id_, with_deleted=with_deleted)
+        record['_files'] = record.files.dumps()
         return record
 
     @classmethod
